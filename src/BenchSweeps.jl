@@ -157,4 +157,15 @@ function Base.show(io::IO, group::BenchSweepGroup)
     return nothing
 end
 
+
+import Tables
+Tables.istable(::Type{<:BenchSweepGroup}) = true
+Tables.rowaccess(::Type{<:BenchSweepGroup}) = true
+Tables.rows(group::BenchSweepGroup) = astable(group)
+
+import TableTraits
+import IteratorInterfaceExtensions
+TableTraits.isiterabletable(::BenchSweepGroup) = true
+IteratorInterfaceExtensions.getiterator(group::BenchSweepGroup) = astable(group)
+
 end # module
