@@ -81,6 +81,8 @@ function BenchRows(group, agg)
         let T = eltype(group.axes[key])
             if T === Any
                 T
+            elseif all(axs -> T in axs, values(group.sweeps))
+                T
             else
                 Union{Missing, T}
             end
