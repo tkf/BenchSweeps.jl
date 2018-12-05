@@ -1,6 +1,11 @@
-using BenchSweeps
-using Test
+module TestBenchSweeps
 
-@testset "BenchSweeps.jl" begin
-    # Write your own tests here.
+include("preamble.jl")
+
+@testset "$file" for file in [
+        "test_smoke.jl",
+        ]
+    include(file)
 end
+
+end  # module
