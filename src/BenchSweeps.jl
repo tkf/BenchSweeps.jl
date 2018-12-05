@@ -64,12 +64,15 @@ Base.run(group::BenchSweepGroup, args...; kwargs...) =
                     group.sweeps,
                     run(group.bench, args...; kwargs...))
 
+""" name -> axes_key -> position in sorted axes_keys """
+const KeyToPosDict = Dict{NameType,Dict{Symbol,Int}}
+
 struct BenchRows
     group::BenchSweepGroup
     nrows::Int
     rowtype::Type
     agg::Function
-    getcoord::Function
+    keytopos::KeyToPosDict
 end
 
 Base.length(rows::BenchRows) = rows.nrows
@@ -92,34 +95,31 @@ function BenchRows(group, agg)
     coleltypes = [NameType; eltypes; [Int, Float64, Int, Float64]]
     rowtype = NamedTuple{Tuple(colnames), Tuple{coleltypes...}}
 
-    keytopos = Dict{NameType,Dict{Symbol,Int}}()
+    keytopos = KeyToPosDict()
     for name in keys(group.bench)
-        keytopos[name] = k2p = Dict{Symbol,Int}()
+        keytopos[name] = Dict()
         for k in group.sweeps[name]
-            k2p[k] = findfirst(isequal(k), axes_keys)
+            keytopos[name][k] = findfirst(isequal(k), axes_keys)
         end
-    end
-    naxes = length(axes_keys)
-
-    function getcoord(name, tkey)
-        vals = Vector(undef, naxes)
-        fill!(vals, missing)
-        for (k, v) in zip(group.sweeps[name], tkey)
-            vals[keytopos[name][k]] = v
-        end
-        return vals
     end
 
     nrows = sum(length(group.bench[name]) for name in keys(group.bench))
-    return BenchRows(group, nrows, rowtype, agg, getcoord)
+    return BenchRows(group, nrows, rowtype, agg, keytopos)
 end
 
 function _process_iter(rows::BenchRows, name, trial)
     tkey, tval = trial
     estimate = rows.agg(tval)
+
+    vals = Vector(undef, length(rows.group.axes))
+    fill!(vals, missing)
+    for (k, v) in zip(rows.group.sweeps[name], tkey)
+        vals[rows.keytopos[name][k]] = v
+    end
+
     return rows.rowtype((
         name,
-        rows.getcoord(name, tkey)...,
+        vals...,
         estimate.allocs,
         estimate.gctime,
         estimate.memory,
