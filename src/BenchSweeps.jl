@@ -34,8 +34,8 @@ function defsweep!(f::Function, group::BenchSweepGroup,
     @assert !haskey(group.sweeps, name)
     group.sweeps[name] = axes_keys
     group.bench[name] = suite = BenchmarkGroup()
-    for args in Iterators.product([group.axes[k] for k in axes_keys]...)
-        suite[args] = f(args...)
+    for coord in Iterators.product([group.axes[k] for k in axes_keys]...)
+        suite[coord] = f(coord...)
     end
     return suite
 end
@@ -83,7 +83,7 @@ function astable(group::BenchSweepGroup; agg = median)
     coleltypes = [NameType; eltypes; [Int, Float64, Int, Float64]]
     rowtype = NamedTuple{Tuple(colnames), Tuple{coleltypes...}}
 
-    # name -> axes_key -> position in sorted axes_keys
+    # name -> coord -> position in sorted axes_keys
     keytopos = Dict{NameType,Dict{Symbol,Int}}()
     for name in keys(group.bench)
         keytopos[name] = Dict()
@@ -93,15 +93,14 @@ function astable(group::BenchSweepGroup; agg = median)
     end
 
     return TypedGenerator{rowtype}(SizedIterator(
-        (name, trial)
-        for name in keys(group.bench) for trial in group.bench[name]
-    )) do (name, trial)
-        tkey, tval = trial
-        estimate = agg(tval)
+        (name, coord, trial)
+        for name in keys(group.bench) for (coord, trial) in group.bench[name]
+    )) do (name, coord, trial)
+        estimate = agg(trial)
 
         vals = Vector(undef, length(group.axes))
         fill!(vals, missing)
-        for (k, v) in zip(group.sweeps[name], tkey)
+        for (k, v) in zip(group.sweeps[name], coord)
             vals[keytopos[name][k]] = v
         end
 
