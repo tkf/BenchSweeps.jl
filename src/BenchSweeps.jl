@@ -11,7 +11,7 @@ using Statistics
 include("iterutils.jl")
 
 const array_names = (:gctime, :time)
-const reserved_names = (array_names..., :alloc, :memory, :name)
+const reserved_names = (array_names..., :alloc, :memory, :trial, :name)
 
 const NameType = Any
 
@@ -100,6 +100,7 @@ Base.run(group::BenchSweepGroup, args...; kwargs...) =
 
 Convert `group::BenchSweepGroup` to an iterator of `NamedTuple`s.
 This is exposed as Tables.jl and TableTraits.jl interfaces.
+See also [`astrialtable`](@ref).
 
 # Arguments
 
@@ -114,7 +115,7 @@ This is exposed as Tables.jl and TableTraits.jl interfaces.
 
 asrawtable(group::BenchSweepGroup) = astable(group, nothing)
 
-function astable(group::BenchSweepGroup, agg = median)
+function _preprocess_table(group)
     axes_keys = sort(collect(keys(group.axes)))
     eltypes = [
         let T = eltype(group.axes[key])
@@ -127,9 +128,6 @@ function astable(group::BenchSweepGroup, agg = median)
             end
         end for key in axes_keys
     ]
-    colnames = [:name; axes_keys; [:allocs, :gctime, :memory, :time]]
-    coleltypes = [NameType; eltypes; [Int, Float64, Int, Float64]]
-    rowtype = NamedTuple{Tuple(colnames), Tuple{coleltypes...}}
 
     # name -> coord -> position in sorted axes_keys
     keytopos = Dict{NameType,Dict{Symbol,Int}}()
@@ -139,6 +137,15 @@ function astable(group::BenchSweepGroup, agg = median)
             keytopos[name][k] = findfirst(isequal(k), axes_keys)
         end
     end
+
+    return (axes_keys, eltypes, keytopos)
+end
+
+function astable(group::BenchSweepGroup, agg = median)
+    axes_keys, eltypes, keytopos = _preprocess_table(group)
+    colnames = [:name; axes_keys; [:allocs, :gctime, :memory, :time]]
+    coleltypes = [NameType; eltypes; [Int, Float64, Int, Float64]]
+    rowtype = NamedTuple{Tuple(colnames), Tuple{coleltypes...}}
 
     if agg !== nothing
         return TypedGenerator{rowtype}(SizedIterator(
@@ -185,6 +192,40 @@ function astable(group::BenchSweepGroup, agg = median)
                 time,
             ))
         end
+    end
+end
+
+"""
+    BenchSweeps.astrialtable(group)
+
+Convert `group::BenchSweepGroup` to an iterator of `NamedTuple`s.
+Each row includes `BenchmarkTools.Trial` object in `:trial` column.
+This is useful for extracting trial results and run `judge` on them.
+
+See also [`astable`](@ref).
+"""
+function astrialtable(group::BenchSweepGroup)
+    axes_keys, eltypes, keytopos = _preprocess_table(group)
+    colnames = [:name; axes_keys; [:trial]]
+    coleltypes = [NameType; eltypes; [BenchmarkTools.Trial]]
+    rowtype = NamedTuple{Tuple(colnames), Tuple{coleltypes...}}
+
+    return TypedGenerator{rowtype}(SizedIterator(
+        (name, coord, trial)
+        for name in keys(group.bench) for (coord, trial) in group.bench[name]
+    )) do (name, coord, trial)
+
+        vals = Vector(undef, length(group.axes))
+        fill!(vals, missing)
+        for (k, v) in zip(group.sweeps[name], coord)
+            vals[keytopos[name][k]] = v
+        end
+
+        return rowtype((
+            name,
+            vals...,
+            trial,
+        ))
     end
 end
 

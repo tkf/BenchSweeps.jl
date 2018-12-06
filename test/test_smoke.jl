@@ -37,6 +37,11 @@ for row in BenchSweeps.asrawtable(results)
     @test row isa NamedTuple
 end
 
+for row in BenchSweeps.astrialtable(results)
+    @test row isa NamedTuple
+    @test row.trial isa BenchmarkTools.Trial
+end
+
 df = DataFrame(results)
 
 end  # module
