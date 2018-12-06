@@ -3,6 +3,7 @@ module BenchSweeps
 export BenchSweepGroup, defsweep!, @defsweep!
 
 using Reexport: @reexport
+using Requires: @require
 
 @reexport using BenchmarkTools
 using MacroTools: @capture
@@ -97,23 +98,46 @@ Base.run(group::BenchSweepGroup, args...; kwargs...) =
 """
     BenchSweeps.astable(group, [agg = median])
     BenchSweeps.asrawtable(group)
+    BenchSweeps.astrialtable(group)
 
 Convert `group::BenchSweepGroup` to an iterator of `NamedTuple`s.
 This is exposed as Tables.jl and TableTraits.jl interfaces.
-See also [`astrialtable`](@ref).
+This function can be invoked by `DataFrames.DataFrame` as well.
 
 # Arguments
 
-- `agg::Union{Function,Nothing}`: "aggregation" function.  Any
+- `agg::Union{Function,Symbol}`: "aggregation" function.  Any
   function that consumes `BenchmarkTools.Trial` and yields
   `BenchmarkTools.TrialEstimate` can be passed (e.g., `median`,
-  `minimum`, `mean`, etc.).  If it is a `nothing` then this function
-  returns a longer iterator whose element is an individual sample.
-  `asrawtable(group)` is an alias for `astable(group, nothing)`.
-"""
-(astable, asrawtable)
+  `minimum`, `mean`, etc.).
 
-asrawtable(group::BenchSweepGroup) = astable(group, nothing)
+  If it is `:raw` then this function returns a longer iterator whose
+  element is an individual sample.  `asrawtable(group)` is an alias
+  for `astable(group, :raw)`.
+
+  If it is `:trial` then each row includes `BenchmarkTools.Trial`
+  object in `:trial` column.  This is useful for extracting trial
+  results and run `judge` on them.  `astrialtable(group)` is an alias
+  for `astable(group, :trial)`.
+
+"""
+(astable, asrawtable, astrialtable)
+
+function astable(group::BenchSweepGroup, agg = median)
+    if agg === :raw
+        asrawtable(group)
+    elseif agg === :trial
+        astrialtable(group)
+    elseif agg isa Union{Symbol, AbstractString}
+        # capture a typo here:
+        error("`agg` must be `:raw`, `:trial` or a callable; got: ", agg)
+    else
+        # otherwise let's hope that `agg` is a callable
+        _astable(group, agg)
+    end
+end
+
+asrawtable(group::BenchSweepGroup) = _astable(group, nothing)
 
 function _preprocess_table(group)
     axes_keys = sort(collect(keys(group.axes)))
@@ -141,7 +165,7 @@ function _preprocess_table(group)
     return (axes_keys, eltypes, keytopos)
 end
 
-function astable(group::BenchSweepGroup, agg = median)
+function _astable(group::BenchSweepGroup, agg)
     axes_keys, eltypes, keytopos = _preprocess_table(group)
     colnames = [:name; axes_keys; [:allocs, :gctime, :memory, :time]]
     coleltypes = [NameType; eltypes; [Int, Float64, Int, Float64]]
@@ -195,15 +219,6 @@ function astable(group::BenchSweepGroup, agg = median)
     end
 end
 
-"""
-    BenchSweeps.astrialtable(group)
-
-Convert `group::BenchSweepGroup` to an iterator of `NamedTuple`s.
-Each row includes `BenchmarkTools.Trial` object in `:trial` column.
-This is useful for extracting trial results and run `judge` on them.
-
-See also [`astable`](@ref).
-"""
 function astrialtable(group::BenchSweepGroup)
     axes_keys, eltypes, keytopos = _preprocess_table(group)
     colnames = [:name; axes_keys; [:trial]]
@@ -251,5 +266,19 @@ import TableTraits
 import IteratorInterfaceExtensions
 TableTraits.isiterabletable(::BenchSweepGroup) = true
 IteratorInterfaceExtensions.getiterator(group::BenchSweepGroup) = astable(group)
+
+function __init__()
+    @require DataFrames="a93c6f00-e57d-5684-b7b6-d8193f3e46c0" begin
+        """
+            DataFrame(group::BenchSweepGroup, [agg = median])
+
+        A shorthand for calling `DataFrame(BenchSweeps.astable(group, agg))`.
+
+        See also: [`BenchSweeps.astable`](@ref).
+        """
+        DataFrames.DataFrame(group::BenchSweepGroup, agg = median) =
+            DataFrames.DataFrame(astable(group, agg))
+    end
+end
 
 end # module

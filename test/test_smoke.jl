@@ -42,6 +42,8 @@ for row in BenchSweeps.astrialtable(results)
     @test row.trial isa BenchmarkTools.Trial
 end
 
-df = DataFrame(results)
+@test DataFrame(results) isa DataFrame
+@test DataFrame(results, :raw) isa DataFrame
+@test DataFrame(results, :trial) isa DataFrame
 
 end  # module
