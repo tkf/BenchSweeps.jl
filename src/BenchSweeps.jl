@@ -6,6 +6,8 @@ using BenchmarkTools
 using MacroTools: @capture
 using Statistics
 
+include("iterutils.jl")
+
 const array_names = (:gctime, :time)
 const reserved_names = (array_names..., :alloc, :memory, :name)
 
@@ -64,21 +66,7 @@ Base.run(group::BenchSweepGroup, args...; kwargs...) =
                     group.sweeps,
                     run(group.bench, args...; kwargs...))
 
-""" name -> axes_key -> position in sorted axes_keys """
-const KeyToPosDict = Dict{NameType,Dict{Symbol,Int}}
-
-struct BenchRows
-    group::BenchSweepGroup
-    nrows::Int
-    rowtype::Type
-    agg::Function
-    keytopos::KeyToPosDict
-end
-
-Base.length(rows::BenchRows) = rows.nrows
-Base.eltype(rows::BenchRows) = rows.rowtype
-
-function BenchRows(group, agg)
+function astable(group::BenchSweepGroup; agg = median)
     axes_keys = sort(collect(keys(group.axes)))
     eltypes = [
         let T = eltype(group.axes[key])
@@ -95,7 +83,8 @@ function BenchRows(group, agg)
     coleltypes = [NameType; eltypes; [Int, Float64, Int, Float64]]
     rowtype = NamedTuple{Tuple(colnames), Tuple{coleltypes...}}
 
-    keytopos = KeyToPosDict()
+    # name -> axes_key -> position in sorted axes_keys
+    keytopos = Dict{NameType,Dict{Symbol,Int}}()
     for name in keys(group.bench)
         keytopos[name] = Dict()
         for k in group.sweeps[name]
@@ -103,48 +92,28 @@ function BenchRows(group, agg)
         end
     end
 
-    nrows = sum(length(group.bench[name]) for name in keys(group.bench))
-    return BenchRows(group, nrows, rowtype, agg, keytopos)
-end
+    return TypedGenerator{rowtype}(SizedIterator(
+        (name, trial)
+        for name in keys(group.bench) for trial in group.bench[name]
+    )) do (name, trial)
+        tkey, tval = trial
+        estimate = agg(tval)
 
-function _process_iter(rows::BenchRows, name, trial)
-    tkey, tval = trial
-    estimate = rows.agg(tval)
+        vals = Vector(undef, length(group.axes))
+        fill!(vals, missing)
+        for (k, v) in zip(group.sweeps[name], tkey)
+            vals[keytopos[name][k]] = v
+        end
 
-    vals = Vector(undef, length(rows.group.axes))
-    fill!(vals, missing)
-    for (k, v) in zip(rows.group.sweeps[name], tkey)
-        vals[rows.keytopos[name][k]] = v
+        return rowtype((
+            name,
+            vals...,
+            estimate.allocs,
+            estimate.gctime,
+            estimate.memory,
+            estimate.time,
+        ))
     end
-
-    return rows.rowtype((
-        name,
-        vals...,
-        estimate.allocs,
-        estimate.gctime,
-        estimate.memory,
-        estimate.time,
-    ))
-end
-
-function Base.iterate(rows::BenchRows, state=nothing)
-    if state === nothing
-        gen = (
-            _process_iter(rows, name, trial)
-            for name in keys(rows.group.bench)
-            for trial in rows.group.bench[name]
-        )
-        gout = iterate(gen)
-    else
-        gen, gs = state
-        gout = iterate(gen, gs)
-    end
-    gout === nothing && return nothing
-    return (gout[1], (gen, gout[2]))
-end
-
-function astable(group::BenchSweepGroup; agg = median)
-    return BenchRows(group, agg)
 end
 
 function Base.show(io::IO, ::MIME"text/plain", group::BenchSweepGroup)
