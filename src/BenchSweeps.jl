@@ -13,6 +13,32 @@ const reserved_names = (array_names..., :alloc, :memory, :name)
 
 const NameType = Any
 
+"""
+    BenchSweepGroup()
+
+# Examples
+```jldoctest
+julia> suite = BenchSweepGroup();
+
+julia> suite.axes[:n] = 2 .^ (0:2:10);
+
+julia> suite.axes[:f] = [:rand, :randn];
+
+julia> using Random
+
+julia> @defsweep! for (n, f) in suite["sort"]
+           @benchmarkable sort(x) setup=(x = Random.\$f(\$n))
+       end;
+```
+
+# Internals
+- `axes::Dict{Symbol,Vector}`: A mapping `axis key -> axis values`.
+- `sweeps::Dict{Symbol,Vector{Symbol}}`: A mapping from benchmark group
+  name to a list of axis keys.
+- `bench::BenchmarkGroup`: A mapping `name -> coord -> benchark or trial`.
+  For a `name`, `coord` is a `n`-tuple where `n = length(sweeps[name])`.
+  The `i`-th element of `coord` is taken from `axes[sweeps[name][i]]`.
+"""
 struct BenchSweepGroup
     axes::Dict{Symbol,Vector}
     sweeps::Dict{NameType,Vector{Symbol}}
