@@ -33,6 +33,10 @@ for row in BenchSweeps.astable(results)
     @test row isa NamedTuple
 end
 
+for row in BenchSweeps.asrawtable(results)
+    @test row isa NamedTuple
+end
+
 df = DataFrame(results)
 
 end  # module

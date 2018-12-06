@@ -94,7 +94,27 @@ Base.run(group::BenchSweepGroup, args...; kwargs...) =
                     group.sweeps,
                     run(group.bench, args...; kwargs...))
 
-function astable(group::BenchSweepGroup; agg = median)
+"""
+    BenchSweeps.astable(group, [agg = median])
+    BenchSweeps.asrawtable(group)
+
+Convert `group::BenchSweepGroup` to an iterator of `NamedTuple`s.
+This is exposed as Tables.jl and TableTraits.jl interfaces.
+
+# Arguments
+
+- `agg::Union{Function,Nothing}`: "aggregation" function.  Any
+  function that consumes `BenchmarkTools.Trial` and yields
+  `BenchmarkTools.TrialEstimate` can be passed (e.g., `median`,
+  `minimum`, `mean`, etc.).  If it is a `nothing` then this function
+  returns a longer iterator whose element is an individual sample.
+  `asrawtable(group)` is an alias for `astable(group, nothing)`.
+"""
+(astable, asrawtable)
+
+asrawtable(group::BenchSweepGroup) = astable(group, nothing)
+
+function astable(group::BenchSweepGroup, agg = median)
     axes_keys = sort(collect(keys(group.axes)))
     eltypes = [
         let T = eltype(group.axes[key])
@@ -120,26 +140,51 @@ function astable(group::BenchSweepGroup; agg = median)
         end
     end
 
-    return TypedGenerator{rowtype}(SizedIterator(
-        (name, coord, trial)
-        for name in keys(group.bench) for (coord, trial) in group.bench[name]
-    )) do (name, coord, trial)
-        estimate = agg(trial)
+    if agg !== nothing
+        return TypedGenerator{rowtype}(SizedIterator(
+            (name, coord, trial)
+            for name in keys(group.bench) for (coord, trial) in group.bench[name]
+        )) do (name, coord, trial)
+            estimate = agg(trial)
 
-        vals = Vector(undef, length(group.axes))
-        fill!(vals, missing)
-        for (k, v) in zip(group.sweeps[name], coord)
-            vals[keytopos[name][k]] = v
+            vals = Vector(undef, length(group.axes))
+            fill!(vals, missing)
+            for (k, v) in zip(group.sweeps[name], coord)
+                vals[keytopos[name][k]] = v
+            end
+
+            return rowtype((
+                name,
+                vals...,
+                estimate.allocs,
+                estimate.gctime,
+                estimate.memory,
+                estimate.time,
+            ))
         end
+    else
+        return TypedGenerator{rowtype}(SizedIterator(
+            (name, coord, trial, time, gctime)
+            for name in keys(group.bench)
+            for (coord, trial) in group.bench[name]
+            for (time, gctime) in zip(trial.times, trial.gctimes)
+        )) do (name, coord, trial, time, gctime)
 
-        return rowtype((
-            name,
-            vals...,
-            estimate.allocs,
-            estimate.gctime,
-            estimate.memory,
-            estimate.time,
-        ))
+            vals = Vector(undef, length(group.axes))
+            fill!(vals, missing)
+            for (k, v) in zip(group.sweeps[name], coord)
+                vals[keytopos[name][k]] = v
+            end
+
+            return rowtype((
+                name,
+                vals...,
+                trial.allocs,
+                gctime,
+                trial.memory,
+                time,
+            ))
+        end
     end
 end
 
