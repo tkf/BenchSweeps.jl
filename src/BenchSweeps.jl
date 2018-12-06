@@ -2,7 +2,9 @@ module BenchSweeps
 
 export BenchSweepGroup, defsweep!, @defsweep!
 
-using BenchmarkTools
+using Reexport: @reexport
+
+@reexport using BenchmarkTools
 using MacroTools: @capture
 using Statistics
 
