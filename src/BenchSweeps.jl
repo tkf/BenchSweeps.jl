@@ -6,6 +6,7 @@ using Reexport: @reexport
 using Requires: @require
 
 @reexport using BenchmarkTools
+using JSON
 using MacroTools: @capture
 using Statistics
 
@@ -56,6 +57,9 @@ function check_axes_key(axes_keys)
     end
 end
 
+iter_coords(group, name) =
+    Iterators.product([group.axes[k] for k in group.sweeps[name]]...)
+
 function defsweep!(f::Function, group::BenchSweepGroup,
                    name::NameType,
                    axes_keys::Vector{Symbol})
@@ -63,7 +67,7 @@ function defsweep!(f::Function, group::BenchSweepGroup,
     @assert !haskey(group.sweeps, name)
     group.sweeps[name] = axes_keys
     group.bench[name] = suite = BenchmarkGroup()
-    for coord in Iterators.product([group.axes[k] for k in axes_keys]...)
+    for coord in iter_coords(group, name)
         suite[coord] = f(coord...)
     end
     return suite
@@ -94,6 +98,90 @@ Base.run(group::BenchSweepGroup, args...; kwargs...) =
     BenchSweepGroup(group.axes,
                     group.sweeps,
                     run(group.bench, args...; kwargs...))
+
+"""
+    BenchSweeps.save(filename, group::BenchSweepGroup)
+    BenchSweeps.load(filename) :: BenchSweepGroup
+
+Save/load `BenchSweepGroup` to/from a JSON file.
+"""
+(save, load)
+
+function json_friendly_bench(group, ::Val{tofriendly}) where {tofriendly}
+    bench = BenchmarkGroup()
+    for name in keys(group.sweeps)
+        bench[name] = sub = BenchmarkGroup()
+        for (i, coord) in enumerate(iter_coords(group, name))
+            if tofriendly
+                sub[string(i)] = group.bench[name][coord]
+            else
+                sub[coord] = group.bench[name][string(i)]
+            end
+        end
+    end
+    return bench
+end
+
+function save(io::IO, group::BenchSweepGroup)
+    print(io, """{"axes":""")
+    JSON.print(io, group.axes)
+    print(io, ""","sweeps":""")
+    JSON.print(io, group.sweeps)
+    print(io, ""","bench":""")
+    BenchmarkTools.save(io, json_friendly_bench(group, Val(true)))
+    print(io, "}")
+    return
+end
+
+recover_axes(dict) = Dict{Symbol,Vector}((Symbol(k) => v) for (k, v) in dict)
+recover_sweeps(dict) =
+    Dict{NameType,Vector{Symbol}}((k => Symbol.(v)) for (k, v) in dict)
+
+function recover_bench(parsed)
+    @assert length(parsed) == 2
+    versions = parsed[1]::Dict  # not used in BenchmarkTools ATM
+    values = parsed[2]::Vector
+    @assert length(values) == 1
+    return map!(BenchmarkTools.recover, values, values)[1]
+end
+
+function load(io::IO)
+    parsed = JSON.parse(io)
+    @assert keys(parsed) == Set(String.(fieldnames(BenchSweepGroup)))
+    tmp = BenchSweepGroup(
+        recover_axes(parsed["axes"]),
+        recover_sweeps(parsed["sweeps"]),
+        recover_bench(parsed["bench"]),
+    )
+    group = BenchSweepGroup(
+        tmp.axes,
+        tmp.sweeps,
+        json_friendly_bench(tmp, Val(false)),
+    )
+    if keys(group.sweeps) != keys(group.bench)
+        @warn """
+        Loaded `BenchSweepGroup` is inconsistent.
+        Unsatisfied: keys(group.sweeps) == keys(group.bench)
+        """
+    end
+    return group
+end
+
+function save(filename::AbstractString, group::BenchSweepGroup)
+    endswith(filename, ".json") ||
+        throw(ArgumentError("Only JSON serialization is supported."))
+    open(filename, "w") do io
+        save(io, group)
+    end
+end
+
+function load(filename::AbstractString)
+    endswith(filename, ".json") ||
+        throw(ArgumentError("Only JSON serialization is supported."))
+    return open(filename, "r") do io
+        load(io)
+    end
+end
 
 """
     BenchSweeps.astable(group, [agg = median])

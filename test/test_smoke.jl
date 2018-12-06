@@ -46,4 +46,19 @@ end
 @test DataFrame(results, :raw) isa DataFrame
 @test DataFrame(results, :trial) isa DataFrame
 
+buf = IOBuffer()
+@test BenchSweeps.save(buf, results) isa Nothing
+seekstart(buf)
+@test (global recovered = BenchSweeps.load(buf)) isa BenchSweepGroup
+
+@test mktempdir() do dir
+    filename = joinpath(dir, "results.json")
+    BenchSweeps.save(filename, results)
+    BenchSweeps.load(filename) isa BenchSweepGroup
+end
+
+@test DataFrame(recovered) isa DataFrame
+@test DataFrame(recovered, :raw) isa DataFrame
+@test DataFrame(recovered, :trial) isa DataFrame
+
 end  # module
