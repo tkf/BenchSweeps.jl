@@ -25,7 +25,7 @@ end
     end
 end
 
-# Options for `tune!` is for trying to make runtime short:
+# Passing some options to `tune!` to make runtime short:
 tune!(suite; maxevals=1, seconds=0.1, samples=1)
 results = run(suite)
 
