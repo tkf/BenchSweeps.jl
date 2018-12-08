@@ -261,9 +261,10 @@ function _astable(group::BenchSweepGroup, agg)
 
     if agg !== nothing
         return TypedGenerator{rowtype}(SizedIterator(
-            (name, coord, trial)
-            for name in keys(group.bench) for (coord, trial) in group.bench[name]
-        )) do (name, coord, trial)
+            (name, coord)
+            for name in keys(group.bench) for coord in iter_coords(group, name)
+        )) do (name, coord)
+            trial = group.bench[name][coord]
             estimate = agg(trial)
 
             vals = Vector(undef, length(group.axes))
@@ -283,11 +284,14 @@ function _astable(group::BenchSweepGroup, agg)
         end
     else
         return TypedGenerator{rowtype}(SizedIterator(
-            (name, coord, trial, time, gctime)
+            (name, coord, time, gctime)
             for name in keys(group.bench)
-            for (coord, trial) in group.bench[name]
-            for (time, gctime) in zip(trial.times, trial.gctimes)
-        )) do (name, coord, trial, time, gctime)
+            for coord in iter_coords(group, name)
+            for (time, gctime) in let trial = group.bench[name][coord]
+                                      zip(trial.times, trial.gctimes)
+                                  end
+        )) do (name, coord, time, gctime)
+            trial = group.bench[name][coord]
 
             vals = Vector(undef, length(group.axes))
             fill!(vals, missing)
@@ -314,9 +318,10 @@ function astrialtable(group::BenchSweepGroup)
     rowtype = NamedTuple{Tuple(colnames), Tuple{coleltypes...}}
 
     return TypedGenerator{rowtype}(SizedIterator(
-        (name, coord, trial)
-        for name in keys(group.bench) for (coord, trial) in group.bench[name]
-    )) do (name, coord, trial)
+        (name, coord)
+        for name in keys(group.bench) for coord in iter_coords(group, name)
+    )) do (name, coord)
+        trial = group.bench[name][coord]
 
         vals = Vector(undef, length(group.axes))
         fill!(vals, missing)
