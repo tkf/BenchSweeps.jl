@@ -37,14 +37,20 @@ for row in BenchSweeps.asrawtable(results)
     @test row isa NamedTuple
 end
 
-for row in BenchSweeps.astrialtable(results)
+for row in BenchSweeps.asbenchtable(results)
     @test row isa NamedTuple
-    @test row.trial isa BenchmarkTools.Trial
+    @test row.bench isa BenchmarkTools.Trial
+end
+
+for row in BenchSweeps.asbenchtable(suite)
+    @test row isa NamedTuple
+    @test row.bench isa BenchmarkTools.Benchmark
 end
 
 @test DataFrame(results) isa DataFrame
 @test DataFrame(results, :raw) isa DataFrame
-@test DataFrame(results, :trial) isa DataFrame
+@test DataFrame(results, :bench) isa DataFrame
+@test DataFrame(suite, :bench) isa DataFrame
 
 buf = IOBuffer()
 @test BenchSweeps.save(buf, results) isa Nothing
@@ -59,6 +65,6 @@ end
 
 @test DataFrame(recovered) isa DataFrame
 @test DataFrame(recovered, :raw) isa DataFrame
-@test DataFrame(recovered, :trial) isa DataFrame
+@test DataFrame(recovered, :bench) isa DataFrame
 
 end  # module

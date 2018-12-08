@@ -13,7 +13,7 @@ using Statistics
 include("iterutils.jl")
 
 const array_names = (:gctime, :time)
-const reserved_names = (array_names..., :alloc, :memory, :trial, :name)
+const reserved_names = (array_names..., :alloc, :memory, :bench, :name)
 
 const NameType = Any
 
@@ -186,7 +186,7 @@ end
 """
     BenchSweeps.astable(group, [agg = median])
     BenchSweeps.asrawtable(group)
-    BenchSweeps.astrialtable(group)
+    BenchSweeps.asbenchtable(group)
 
 Convert `group::BenchSweepGroup` to an iterator of `NamedTuple`s.
 This is exposed as Tables.jl and TableTraits.jl interfaces.
@@ -203,22 +203,24 @@ This function can be invoked by `DataFrames.DataFrame` as well.
   element is an individual sample.  `asrawtable(group)` is an alias
   for `astable(group, :raw)`.
 
-  If it is `:trial` then each row includes `BenchmarkTools.Trial`
-  object in `:trial` column.  This is useful for extracting trial
-  results and run `judge` on them.  `astrialtable(group)` is an alias
-  for `astable(group, :trial)`.
+  If it is `:bench` then each row includes `BenchmarkTools.Trial`
+  object in `:bench` column.  This is useful for extracting trial
+  results and run `judge` on them.  `asbenchtable(group)` is an alias
+  for `astable(group, :bench)`.  Note that this option works also when
+  `group.bench` holds `BenchmarkTools.Benchmark` objects instead of 
+  trials.
 
 """
-(astable, asrawtable, astrialtable)
+(astable, asrawtable, asbenchtable)
 
 function astable(group::BenchSweepGroup, agg = median)
     if agg === :raw
         asrawtable(group)
-    elseif agg === :trial
-        astrialtable(group)
+    elseif agg === :bench
+        asbenchtable(group)
     elseif agg isa Union{Symbol, AbstractString}
         # capture a typo here:
-        error("`agg` must be `:raw`, `:trial` or a callable; got: ", agg)
+        error("`agg` must be `:raw`, `:bench` or a callable; got: ", agg)
     else
         # otherwise let's hope that `agg` is a callable
         _astable(group, agg)
@@ -311,10 +313,16 @@ function _astable(group::BenchSweepGroup, agg)
     end
 end
 
-function astrialtable(group::BenchSweepGroup)
+# Type without type parameters
+constructor_of(@nospecialize(_::T)) where {T} =
+    getproperty(parentmodule(T), nameof(T))
+
+function asbenchtable(group::BenchSweepGroup)
     axes_keys, eltypes, keytopos = _preprocess_table(group)
-    colnames = [:name; axes_keys; [:trial]]
-    coleltypes = [NameType; eltypes; [BenchmarkTools.Trial]]
+    bench = first(first(values(g)) for g in values(group.bench))
+    benchtype = constructor_of(bench)
+    colnames = [:name; axes_keys; [:bench]]
+    coleltypes = [NameType; eltypes; [benchtype]]
     rowtype = NamedTuple{Tuple(colnames), Tuple{coleltypes...}}
 
     return TypedGenerator{rowtype}(SizedIterator(
