@@ -332,16 +332,22 @@ function astrialtable(group::BenchSweepGroup)
     end
 end
 
+Base.summary(io::IO, group::BenchSweepGroup) =
+    print(io, "BenchSweepGroup with ", length(group.axes), " axes",
+          " and ", length(group.sweeps), " sweeps")
+
+Base.show(io::IO, group::BenchSweepGroup) = summary(io, group)
+
 function Base.show(io::IO, ::MIME"text/plain", group::BenchSweepGroup)
-    println(io, "BenchSweepGroup with ", length(group.axes), " axes")
+    summary(io, group)
+    println(io)
+    printstyled(io, "axes"; color=:blue)
+    print(io, " = ")
     show(io, MIME("text/plain"), group.axes)
     println(io)
+    printstyled(io, "bench"; color=:blue)
+    print(io, " = ")
     show(io, MIME("text/plain"), group.bench)
-end
-
-function Base.show(io::IO, group::BenchSweepGroup)
-    print(io, "BenchSweepGroup with ", length(group.axes), " axes")
-    return nothing
 end
 
 
